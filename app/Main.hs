@@ -2,13 +2,25 @@ module Main where
 
 import           Control.Applicative ((<$>))
 import           Control.Monad       (unless)
-import           Env                 (bindVars)
+import           Env                 (bindVars, nullEnv)
 import           Eval
+import           IOFunc              (ioPrimitives)
 import           Lib
 import           Parser
+import           PrimitiveFunc       (primitives)
+import           SpecialForm         (specialForms)
 import           System.Environment
 import           System.IO
 import           Types
+
+
+primitiveBindings :: IO Env
+primitiveBindings = nullEnv >>= flip bindVars (map (makeFunc PrimitiveFunc) primitives
+                                             ++map (makeFunc IOFunc) ioPrimitives
+                                             ++map (makeFunc SpecialForm) specialForms
+                                             )
+  where makeFunc constructor (var, func) = (var, constructor func)
+
 
 flushStr :: String -> IO ()
 flushStr str = putStr str >> hFlush stdout

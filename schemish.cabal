@@ -20,6 +20,9 @@ library
                       ,Parser
                       ,Eval
                       ,Env
+                      ,PrimitiveFunc
+                      ,IOFunc
+                      ,SpecialForm
   build-depends:       base >= 4.7 && < 5
                       ,parsec
                       ,lens
