@@ -19,6 +19,7 @@ library
                       ,Types
                       ,Parser
                       ,Eval
+                      ,Env
   build-depends:       base >= 4.7 && < 5
                       ,parsec
                       ,lens
