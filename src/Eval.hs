@@ -21,7 +21,8 @@ makePrisms ''LispVal
 
 primitiveBindings :: IO Env
 primitiveBindings = nullEnv >>= flip bindVars (map (makeFunc PrimitiveFunc) primitives
-                                             ++map (makeFunc IOFunc) ioPrimitives)
+                                             ++map (makeFunc IOFunc) ioPrimitives
+                                             ++map (makeFunc SpecialForm) specialForms)
   where makeFunc constructor (var, func) = (var, constructor func)
 
 eval :: Env -> LispVal -> IOThrowsError LispVal
@@ -32,36 +33,37 @@ eval env val@(Number _) = return val
 eval env val@(Float _) = return val
 eval env val@(Bool _) = return val
 eval env (Atom id) = getVar env id
-eval env (List [Atom "quote", val]) = return val
-eval env (List [Atom "if", pred, conseq, alt]) =
-  do result <- eval env pred
-     case result of
-       Bool False -> eval env alt
-       Bool True -> eval env conseq
-       _ -> throwError $ TypeMismatch "boolean" result
-eval env (List (Atom "cond" : clauses)) = cond env clauses
-eval env (List (Atom "case" : key : clauses)) = -- lispCase (eval test) clauses
-  do keyEvaled <- eval env key
-     lispCase env keyEvaled clauses
-eval env (List [Atom "set!", Atom var, form]) = eval env form >>= setVar env var
-eval env (List [Atom "define", Atom var, form]) = eval env form >>= defineVar env var
-eval env (List (Atom "define" : List (Atom var : params) : body)) =
-  makeNormalFunc env params body >>= defineVar env var
-eval env (List (Atom "define" : DottedList (Atom var : params) varargs : body)) =
-  makeVarArgs varargs env params body >>= defineVar env var
-eval env (List (Atom "lambda" : List params : body)) =
-  makeNormalFunc env params body
-eval env (List (Atom "lambda" : DottedList params varargs : body)) =
-  makeVarArgs varargs env params body
-eval env (List (Atom "lambda" : varargs@(Atom _) : body)) =
-  makeVarArgs varargs env [] body
-eval env (List [Atom "load", String filename]) =
-  load filename >>= fmap last . mapM (eval env)
+-- --eval env (List [Atom "quote", val]) = return val
+-- eval env (List [Atom "if", pred, conseq, alt]) =
+--   do result <- eval env pred
+--      case result of
+--        Bool False -> eval env alt
+--        Bool True -> eval env conseq
+--        _ -> throwError $ TypeMismatch "boolean" result
+-- eval env (List (Atom "cond" : clauses)) = cond env clauses
+-- eval env (List (Atom "case" : key : clauses)) = -- lispCase (eval test) clauses
+--   do keyEvaled <- eval env key
+--      lispCase env keyEvaled clauses
+-- eval env (List [Atom "set!", Atom var, form]) = eval env form >>= setVar env var
+-- eval env (List [Atom "define", Atom var, form]) = eval env form >>= defineVar env var
+-- eval env (List (Atom "define" : List (Atom var : params) : body)) =
+--   makeNormalFunc env params body >>= defineVar env var
+-- eval env (List (Atom "define" : DottedList (Atom var : params) varargs : body)) =
+--   makeVarArgs varargs env params body >>= defineVar env var
+-- eval env (List (Atom "lambda" : List params : body)) =
+--   makeNormalFunc env params body
+-- eval env (List (Atom "lambda" : DottedList params varargs : body)) =
+--   makeVarArgs varargs env params body
+-- eval env (List (Atom "lambda" : varargs@(Atom _) : body)) =
+--   makeVarArgs varargs env [] body
+-- eval env (List [Atom "load", String filename]) =
+--   load filename >>= fmap last . mapM (eval env)
 -- eval env (List (Atom func : args)) = mapM (eval env) args >>= liftThrows . apply func -- apply func $ map eval args
 eval env (List (function : args)) = do
   func <- eval env function
-  argVals <- mapM (eval env) args
-  apply func argVals
+  apply env func args
+  -- argVals <- mapM (eval env) args
+  -- apply func argVals
 eval _ badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 makeFunc :: Maybe String -> Env -> [LispVal] -> [LispVal] -> IOThrowsError LispVal
@@ -69,13 +71,20 @@ makeFunc varargs env params body = return $ Func (map show params) varargs body 
 makeNormalFunc = makeFunc Nothing
 makeVarArgs = makeFunc . Just . show
 
-apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
-apply (PrimitiveFunc func) args = liftThrows $ func args
-apply (IOFunc func) args = func args
-apply (Func params varargs body closure) args =
+apply :: Env -> LispVal -> [LispVal] -> IOThrowsError LispVal
+apply env (SpecialForm func) args = func env args
+apply env (PrimitiveFunc func) args = do
+  argVals <- mapM (eval env) args
+  liftThrows $ func argVals
+apply env (IOFunc func) args = do
+  argVals <- mapM (eval env) args
+  func env argVals
+apply env (Func params varargs body closure) args =
   if num params /= num args && isNothing varargs
     then throwError $ NumArgs (num params) args
-    else liftIO (bindVars closure $ zip params args) >>= bindVarArgs varargs >>= evalBody
+    else do
+      argVals <- mapM (eval env) args
+      liftIO (bindVars closure $ zip params argVals) >>= bindVarArgs varargs >>= evalBody
   where remainingArgs = drop (length params) args
         num = toInteger . length
         -- evalBody env = last <$> mapM (trace ("eval function body " ++ show body) (eval env)) body
@@ -84,9 +93,9 @@ apply (Func params varargs body closure) args =
           Just argName -> liftIO $ bindVars env [(argName, List remainingArgs)]
           Nothing -> return env
 
-applyProc :: [LispVal] -> IOThrowsError LispVal
-applyProc [func, List args] = apply func args
-applyProc (func : args)     = apply func args
+applyProc :: Env -> [LispVal] -> IOThrowsError LispVal
+applyProc env [func, List args] = apply env func args
+applyProc env (func : args)     = apply env func args
 
 makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
 makePort mode [String filename] = fmap Port $ liftIO $ openFile filename mode
@@ -210,16 +219,65 @@ unpackNum (Number n) = return n
 -- unpackNum (List [n]) = unpackNum n
 unpackNum notNum = throwError $ TypeMismatch "number" notNum
 
-ioPrimitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
+caseFrm :: Env -> [LispVal] -> IOThrowsError LispVal
+caseFrm env (key : clauses) =
+  do keyEvaled <- eval env key
+     lispCase env keyEvaled clauses
+
+setFrm env [Atom var, form] = eval env form >>= setVar env var
+setFrm _ args = throwError $ NumArgs 2 args
+
+defFrm env [Atom var, form] = eval env form >>= defineVar env var
+defFrm env (List (Atom var : params) : body) =
+  makeNormalFunc env params body >>= defineVar env var
+defFrm env (DottedList (Atom var : params) varargs : body) =
+  makeVarArgs varargs env params body >>= defineVar env var
+
+lambdaFrm env (List params : body) =
+  makeNormalFunc env params body
+lambdaFrm env (DottedList params varargs : body) =
+  makeVarArgs varargs env params body
+lambdaFrm env (varargs@(Atom _) : body) =
+  makeVarArgs varargs env [] body
+
+loadFrm env [String filename] = load filename >>= fmap last . mapM (eval env)
+
+quote :: Env -> [LispVal] -> IOThrowsError LispVal
+quote _ [val] = return val
+quote _ args  = throwError $ NumArgs 1 args
+
+ifFrm :: Env -> [LispVal] -> IOThrowsError LispVal
+ifFrm env [pred, conseq, alt] =
+  do result <- eval env pred
+     case result of
+       Bool False -> eval env alt
+       Bool True -> eval env conseq
+       _ -> throwError $ TypeMismatch "boolean" result
+ifFrm _ args = throwError $ NumArgs 3 args
+
+specialForms :: [(String, Env -> [LispVal] -> IOThrowsError LispVal)]
+specialForms = [("quote", quote),
+                ("if", ifFrm),
+                ("cond", cond),
+                ("case", caseFrm),
+                ("set!", setFrm),
+                ("define", defFrm),
+                ("lambda", lambdaFrm),
+                ("load", loadFrm)]
+
+discardEnv :: ([LispVal] -> IOThrowsError LispVal) -> (Env -> [LispVal] -> IOThrowsError LispVal)
+discardEnv func _ = func
+
+ioPrimitives :: [(String, Env -> [LispVal] -> IOThrowsError LispVal)]
 ioPrimitives = [("apply", applyProc),
-                ("open-input-file", makePort ReadMode),
-                ("open-output-file", makePort WriteMode),
-                ("close-input-port", closePort),
-                ("close-output-port", closePort),
-                ("read", readProc),
-                ("write", writeProc),
-                ("read-contents", readContents),
-                ("read-all", readAll)]
+                ("open-input-file", discardEnv $ makePort ReadMode),
+                ("open-output-file", discardEnv $ makePort WriteMode),
+                ("close-input-port", discardEnv closePort),
+                ("close-output-port", discardEnv closePort),
+                ("read", discardEnv readProc),
+                ("write", discardEnv writeProc),
+                ("read-contents", discardEnv readContents),
+                ("read-all", discardEnv readAll)]
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives = [("+", numericBinOp (+)),
