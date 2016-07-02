@@ -14,13 +14,14 @@ module Types
 import           Control.Lens                  hiding (List, cons, noneOf)
 import           Control.Lens                  (makePrisms)
 import           Control.Monad.Trans.Either
+import           Control.Monad.Trans.Except
 import           Data.IORef
 import           System.IO                     (Handle)
 import           Text.ParserCombinators.Parsec (ParseError)
 
 type Env = IORef [(String, IORef LispVal)]
 type ThrowsError = Either LispError
-type IOThrowsError = EitherT LispError IO
+type IOThrowsError = ExceptT LispError IO
 
 type LispEval = IOThrowsError LispVal
 

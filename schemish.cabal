@@ -28,6 +28,7 @@ library
                       ,lens
                       ,mtl
                       ,either
+                      ,transformers
   default-language:    Haskell2010
 
 executable schemish-exe
