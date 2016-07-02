@@ -5,6 +5,7 @@ module Types
      Env
     ,ThrowsError
     ,IOThrowsError
+    ,LispEval
     ,LispError(..)
     ,LispVal(..)
     ,Unpacker(..)
@@ -20,6 +21,8 @@ import           Text.ParserCombinators.Parsec (ParseError)
 type Env = IORef [(String, IORef LispVal)]
 type ThrowsError = Either LispError
 type IOThrowsError = EitherT LispError IO
+
+type LispEval = IOThrowsError LispVal
 
 data LispError = NumArgs Integer [LispVal]
                | TypeMismatch String LispVal
@@ -37,11 +40,11 @@ data LispVal = Atom String
              | String String
              | Char Char
              | Bool Bool
-             | SpecialForm (Env -> [LispVal] -> IOThrowsError LispVal)
+             | SpecialForm (Env -> [LispVal] -> LispEval)
              | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
              | Func {params :: [String], vararg :: Maybe String,
                      body :: [LispVal], closure :: Env}
-             | IOFunc (Env -> [LispVal] -> IOThrowsError LispVal)
+             | IOFunc (Env -> [LispVal] -> LispEval)
              | Port Handle
              -- deriving (Show)
 

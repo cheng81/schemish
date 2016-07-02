@@ -9,7 +9,7 @@ import           Env                  (bindVars, getVar)
 import           Lib                  (liftThrows)
 import           Types
 
-eval :: Env -> LispVal -> IOThrowsError LispVal
+eval :: Env -> LispVal -> LispEval
 eval env val@(String _) = return val
 eval env val@(Char _) = return val
 eval env val@(Number _) = return val
@@ -21,7 +21,7 @@ eval env (List (function : args)) = do
   apply env func args
 eval _ badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
-apply :: Env -> LispVal -> [LispVal] -> IOThrowsError LispVal
+apply :: Env -> LispVal -> [LispVal] -> LispEval
 apply env (SpecialForm func) args = func env args
 apply env (PrimitiveFunc func) args = do
   argVals <- mapM (eval env) args
@@ -34,11 +34,11 @@ apply env (Func params varargs body closure) args =
     then throwError $ NumArgs (num params) args
     else do
       argVals <- mapM (eval env) args
-      liftIO (bindVars closure $ zip params argVals) >>= bindVarArgs varargs >>= evalBody
-  where remainingArgs = drop (length params) args
-        num = toInteger . length
+      let remainingArgs = drop (length params) argVals
+      liftIO (bindVars closure $ zip params argVals) >>= bindVarArgs remainingArgs varargs >>= evalBody
+  where num = toInteger . length
         -- evalBody env = last <$> mapM (trace ("eval function body " ++ show body) (eval env)) body
         evalBody env = last <$> mapM (eval env) body
-        bindVarArgs arg env = case arg of
+        bindVarArgs remainingArgs arg env = case arg of
           Just argName -> liftIO $ bindVars env [(argName, List remainingArgs)]
           Nothing -> return env

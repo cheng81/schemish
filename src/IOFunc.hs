@@ -9,10 +9,10 @@ import           Parser              (readExpr, readExprList)
 import           System.IO
 import           Types
 
-discardEnv :: ([LispVal] -> IOThrowsError LispVal) -> (Env -> [LispVal] -> IOThrowsError LispVal)
+discardEnv :: ([LispVal] -> LispEval) -> (Env -> [LispVal] -> LispEval)
 discardEnv func _ = func
 
-ioPrimitives :: [(String, Env -> [LispVal] -> IOThrowsError LispVal)]
+ioPrimitives :: [(String, Env -> [LispVal] -> LispEval)]
 ioPrimitives = [("apply", applyProc),
                 ("open-input-file", discardEnv $ makePort ReadMode),
                 ("open-output-file", discardEnv $ makePort WriteMode),
@@ -26,30 +26,30 @@ ioPrimitives = [("apply", applyProc),
 
 loadFrm env [String filename] = load filename >>= fmap last . mapM (eval env)
 
-applyProc :: Env -> [LispVal] -> IOThrowsError LispVal
+applyProc :: Env -> [LispVal] -> LispEval
 applyProc env [func, List args] = apply env func args
 applyProc env (func : args)     = apply env func args
 
-makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
+makePort :: IOMode -> [LispVal] -> LispEval
 makePort mode [String filename] = fmap Port $ liftIO $ openFile filename mode
 
-closePort :: [LispVal] -> IOThrowsError LispVal
+closePort :: [LispVal] -> LispEval
 closePort [Port port] = liftIO $ hClose port >> return (Bool True)
 closePort _           = return $ Bool False
 
-readProc :: [LispVal] -> IOThrowsError LispVal
+readProc :: [LispVal] -> LispEval
 readProc []          = readProc [Port stdin]
 readProc [Port port] = liftIO (hGetLine port) >>= liftThrows . readExpr
 
-writeProc :: [LispVal] -> IOThrowsError LispVal
+writeProc :: [LispVal] -> LispEval
 writeProc [obj]            = writeProc [obj, Port stdout]
 writeProc [obj, Port port] = liftIO $ hPrint port obj >> return (Bool True)
 
-readContents :: [LispVal] -> IOThrowsError LispVal
+readContents :: [LispVal] -> LispEval
 readContents [String filename] = fmap String $ liftIO $ readFile filename
 
 load :: String -> IOThrowsError [LispVal]
 load filename = liftIO (readFile filename) >>= liftThrows . readExprList
 
-readAll :: [LispVal] -> IOThrowsError LispVal
+readAll :: [LispVal] -> LispEval
 readAll [String filename] = List <$> load filename
