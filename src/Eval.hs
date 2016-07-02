@@ -15,6 +15,7 @@ eval env val@(Char _) = return val
 eval env val@(Number _) = return val
 eval env val@(Float _) = return val
 eval env val@(Bool _) = return val
+eval env val@(Port _) = return val
 eval env (Atom id) = getVar env id
 eval env (List (function : args)) = do
   func <- eval env function
