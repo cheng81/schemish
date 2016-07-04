@@ -13,7 +13,8 @@ module Types
 
 import           Control.Lens                  hiding (List, cons, noneOf)
 import           Control.Lens                  (makePrisms)
-import           Control.Monad.Trans.Either
+import           Control.Monad.Trans.Cont
+--import           Control.Monad.Trans.Either
 import           Control.Monad.Trans.Except
 import           Data.IORef
 import           System.IO                     (Handle)
@@ -23,7 +24,8 @@ type Env = IORef [(String, IORef LispVal)]
 type ThrowsError = Either LispError
 type IOThrowsError = ExceptT LispError IO
 
-type LispEval = IOThrowsError LispVal
+--type LispEval = ContT LispVal IOThrowsError LispVal
+type LispEval = ContT LispVal (ExceptT LispError IO) LispVal
 
 data LispError = NumArgs Integer [LispVal]
                | TypeMismatch String LispVal
@@ -41,6 +43,7 @@ data LispVal = Atom String
              | String String
              | Char Char
              | Bool Bool
+             | Continuation (LispVal -> LispEval)
              | SpecialForm (Env -> [LispVal] -> LispEval)
              | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
              | Func {params :: [String], vararg :: Maybe String,

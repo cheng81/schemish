@@ -16,23 +16,25 @@ eval env val@(Number _) = return val
 eval env val@(Float _) = return val
 eval env val@(Bool _) = return val
 eval env val@(Port _) = return val
+eval env val@(Continuation _) = return val
 eval env (Atom id) = getVar env id
 eval env (List (function : args)) = do
   func <- eval env function
   apply env func args
-eval _ badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
+eval _ badForm = lift . throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 apply :: Env -> LispVal -> [LispVal] -> LispEval
 apply env (SpecialForm func) args = func env args
+apply env (Continuation k) [arg] = eval env arg >>= k
 apply env (PrimitiveFunc func) args = do
   argVals <- mapM (eval env) args
-  liftThrows $ func argVals
+  lift $ liftThrows $ func argVals
 apply env (IOFunc func) args = do
   argVals <- mapM (eval env) args
   func env argVals
 apply env (Func params varargs body closure) args =
   if num params /= num args && isNothing varargs
-    then throwError $ NumArgs (num params) args
+    then lift $ throwError $ NumArgs (num params) args
     else do
       argVals <- mapM (eval env) args
       let remainingArgs = drop (length params) argVals

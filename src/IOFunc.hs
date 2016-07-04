@@ -2,7 +2,9 @@ module IOFunc
     ( ioPrimitives
     ) where
 
+import           Control.Applicative ((<$>))
 import           Control.Monad.Trans
+import           Env                 (bindVars)
 import           Eval                (apply, eval)
 import           Lib                 (liftThrows)
 import           Parser              (readExpr, readExprList)
@@ -24,7 +26,8 @@ ioPrimitives = [("apply", applyProc),
                 ("read-all", discardEnv readAll),
                 ("load", loadFrm)]
 
-loadFrm env [String filename] = load filename >>= fmap last . mapM (eval env)
+loadFrm :: Env -> [LispVal] -> LispEval
+loadFrm env [String filename] = lift (load filename) >>= fmap last . mapM (eval env)
 
 applyProc :: Env -> [LispVal] -> LispEval
 applyProc env [func, List args] = apply env func args
@@ -39,7 +42,7 @@ closePort _           = return $ Bool False
 
 readProc :: [LispVal] -> LispEval
 readProc []          = readProc [Port stdin]
-readProc [Port port] = liftIO (hGetLine port) >>= liftThrows . readExpr
+readProc [Port port] = liftIO (hGetLine port) >>= (lift . liftThrows) . readExpr
 
 writeProc :: [LispVal] -> LispEval
 writeProc [obj]            = writeProc [obj, Port stdout]
@@ -52,4 +55,4 @@ load :: String -> IOThrowsError [LispVal]
 load filename = liftIO (readFile filename) >>= liftThrows . readExprList
 
 readAll :: [LispVal] -> LispEval
-readAll [String filename] = List <$> load filename
+readAll [String filename] = List <$> lift (load filename)

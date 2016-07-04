@@ -5,31 +5,33 @@ module Env
     , setVar
     , defineVar
     , bindVars
-
     ) where
 
-import           Control.Monad.Except
+-- import           Control.Monad.Cont         (MonadCont)
+-- import           Control.Monad.Except       (MonadError)
+import           Control.Monad.Trans
+import           Control.Monad.Trans.Except
 import           Data.IORef
-import           Data.Maybe           (fromMaybe, isJust, isNothing)
+import           Data.Maybe                 (fromMaybe, isJust, isNothing)
 import           Types
 
 isBound :: Env -> String -> IO Bool
 isBound envRef var = fmap (isJust . lookup var) (readIORef envRef)
 
-getVar :: Env -> String -> IOThrowsError LispVal
+getVar :: Env -> String -> LispEval
 getVar envRef var = do env <- liftIO $ readIORef envRef
-                       maybe (throwError $ UnboundVar "Getting an unbound variable" var)
+                       maybe (lift . throwE $ UnboundVar "Getting an unbound variable" var)
                              (liftIO . readIORef)
                              (lookup var env)
 
-setVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+setVar :: Env -> String -> LispVal -> LispEval
 setVar envRef var value = do env <- liftIO $ readIORef envRef
-                             maybe (throwError $ UnboundVar "Setting an unbound variable" var)
+                             maybe (lift . throwE $ UnboundVar "Setting an unbound variable" var)
                                    (liftIO . flip writeIORef value)
                                    (lookup var env)
                              return value
 
-defineVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+defineVar :: Env -> String -> LispVal -> LispEval
 defineVar envRef var value = do
   alreadyDefined <- liftIO $ isBound envRef var
   if alreadyDefined
