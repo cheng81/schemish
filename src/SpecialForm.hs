@@ -18,12 +18,15 @@ specialForms = [("quote", quote),
                 ("set!", setFrm),
                 ("define", defFrm),
                 ("lambda", lambdaFrm),
-                ("callCC", callCCFrm)]
+                ("call-with-current-continuation", callCCFrm),
+                ("begin", seqFrm)]
+
+seqFrm env stmts = last <$> mapM (eval env) stmts
 
 callCCFrm :: Env -> [LispVal] -> LispEval
-callCCFrm env (Atom cc : body) =
-  callCC $ \k -> do newEnv <- liftIO $ bindVars env [(cc, Continuation k)]
-                    last <$> mapM (eval newEnv) body
+callCCFrm env [function] =
+  callCC $ \k -> do func <- eval env function
+                    apply env func [Continuation k]
 
 caseFrm :: Env -> [LispVal] -> LispEval
 caseFrm env (key : clauses) =
