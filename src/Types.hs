@@ -43,6 +43,7 @@ data LispVal = Atom String
              | String String
              | Char Char
              | Bool Bool
+             | Unit
              | Continuation (LispVal -> LispEval)
              | SpecialForm (Env -> [LispVal] -> LispEval)
              | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
@@ -79,6 +80,7 @@ showVal Func {params = args, vararg = varargs, body = body, closure = env} =
     Just arg -> " . " ++ arg ++ ") ...)"
 showVal (Port _) = "<IO port>"
 showVal (IOFunc _) = "<IO primitive>"
+showVal Unit = ""
 
 showError :: LispError -> String
 showError (UnboundVar message varname) = message ++ ": " ++ varname
@@ -87,6 +89,7 @@ showError (NotFunction message func) = message ++ ": " ++ show func
 showError (NumArgs expected found) = "Expected " ++ show expected ++ " args; found values " ++ unwordsList found
 showError (TypeMismatch expected found) = "Invalid type: expected " ++ expected ++ ", found " ++ show found
 showError (Parser parseErr) = "Parse error at " ++ show parseErr
+showError (Default msg) = "Error: " ++ msg
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map showVal
