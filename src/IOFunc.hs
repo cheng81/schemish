@@ -24,7 +24,13 @@ ioPrimitives = [("apply", applyProc),
                 ("write", discardEnv writeProc),
                 ("read-contents", discardEnv readContents),
                 ("read-all", discardEnv readAll),
-                ("load", loadFrm)]
+                ("load", loadFrm),
+                ("display", displayFrm)]
+
+displayFrm :: Env -> [LispVal] -> LispEval
+displayFrm env [arg] = do
+  _ <- liftIO $ print arg
+  return Unit
 
 loadFrm :: Env -> [LispVal] -> LispEval
 loadFrm env [String filename] = lift (load filename) >>= fmap last . mapM (eval env)
