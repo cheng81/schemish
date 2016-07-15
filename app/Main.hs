@@ -1,20 +1,24 @@
 module Main where
 
-import           Control.Applicative ((<$>))
-import           Control.Monad       (unless)
-import           Control.Monad.Trans (lift)
+import           Control.Applicative        ((<$>))
+import           Control.Monad              (liftM, unless)
+import           Control.Monad.IO.Class     (liftIO)
+import           Control.Monad.State.Strict (StateT, evalStateT, get, put)
+import           Control.Monad.Trans        (lift)
+
 --import           Control.Monad.Trans.Cont (evalContT)
-import           Env                 (bindVars, nullEnv)
+import           Data.Char                  (isSpace)
+import           Env                        (bindVars, nullEnv)
 import           Eval
-import           IOFunc              (ioPrimitives)
+import           IOFunc                     (ioPrimitives)
 import           Lib
 import           Parser
-import           PrimitiveFunc       (primitives)
-import           SpecialForm         (specialForms)
+import           PrimitiveFunc              (primitives)
+import           SpecialForm                (specialForms)
+import           System.Console.Haskeline
 import           System.Environment
 import           System.IO
 import           Types
-
 
 primitiveBindings :: IO Env
 primitiveBindings = nullEnv >>= flip bindVars (map (makeFunc PrimitiveFunc) primitives
@@ -52,6 +56,9 @@ evalExpr env expr = runIOThrows $ show <$> runEval (eval env expr)
 evalAndPrint :: Env -> LispVal -> IO ()
 evalAndPrint env expr = evalExpr env expr >>= putStrLn
 
+evalStringAndPrint :: Env -> String -> IO ()
+evalStringAndPrint env expr = evalString env expr >>= putStrLn
+
 until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
 until_ pred prompt action = do
   result <- prompt
@@ -72,10 +79,32 @@ isQuit _ = False
 runRepl :: IO ()
 runRepl = primitiveBindings >>= until_ isQuit (readPrompt "Lisp>>> " >>= parseLine) . evalAndPrint
 
+-- liftEnv :: IO Env -> InputT IO Env
+-- liftEnv env = liftM env
+--
+-- runReplLoop = runInputT defaultSettings $ liftEnv primitiveBindings >>= replLoop
+runReplLoop = primitiveBindings >>= evalStateT (runInputT defaultSettings replLoop)
+
+replLoop :: InputT (StateT Env IO) ()
+replLoop = do
+  maybeLine <- getInputLine "schish>>> "
+  case maybeLine of
+    Nothing -> return ()
+    Just line -> do
+      let trimmedLine = dropWhile isSpace line
+      if not $ null trimmedLine
+        then case trimmedLine of
+          "quit" -> return ()
+          _ -> lift get >>= \e -> liftIO (evalStringAndPrint e trimmedLine) >> replLoop
+          -- _ -> do
+          --       _ <- lift $ evalStringAndPrint env trimmedLine
+          --       replLoop env
+        else replLoop
+
 main :: IO ()
 main = do
   args <- getArgs
-  if null args then runRepl else runOne args
+  if null args then runReplLoop else runOne args
   -- case length args of
   --   0 -> runRepl
   --   1 -> runOne $ head args -- evalAndPrint $ head args

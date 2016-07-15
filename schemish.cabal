@@ -38,6 +38,8 @@ executable schemish-exe
   build-depends:       base
                      , schemish
                      , mtl
+                     , transformers
+                     , haskeline
   default-language:    Haskell2010
 
 test-suite schemish-test
