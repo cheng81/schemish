@@ -2,6 +2,8 @@ module Main where
 
 import           Control.Applicative ((<$>))
 import           Control.Monad       (unless)
+import           Control.Monad.Trans (lift)
+--import           Control.Monad.Trans.Cont (evalContT)
 import           Env                 (bindVars, nullEnv)
 import           Eval
 import           IOFunc              (ioPrimitives)
@@ -28,8 +30,11 @@ flushStr str = putStr str >> hFlush stdout
 readPrompt :: String -> IO String
 readPrompt prompt = flushStr prompt >> getLine
 
+stringToAction :: Env -> String -> LispEval
+stringToAction env expr = lift (liftThrows (readExpr expr)) >>= eval env
+
 evalString :: Env -> String -> IO String
-evalString env expr = runIOThrows $ fmap show $ liftThrows (readExpr expr) >>= eval env
+evalString env expr = runIOThrows $ show <$> runEval (stringToAction env expr)  -- (liftThrows (readExpr expr) >>= eval env) -- evalContT (liftThrows (readExpr expr) >>= eval env)
 --evalString env expr = return $ extractValue $ trapError (fmap show $ readExpr expr >>= eval env)
 
 evalAndPrint :: Env -> String -> IO ()
@@ -46,7 +51,8 @@ until_ pred prompt action = do
 runOne :: [String] -> IO ()
 runOne args = do --primitiveBindings >>= flip evalAndPrint expr
   env <- primitiveBindings >>= flip bindVars [("args", List $ map String $ drop 1 args)]
-  runIOThrows (show <$> eval env (List [Atom "load", String (head args)])) >>= hPutStrLn stderr
+  runIOThrows (show <$> runEval (eval env (List [Atom "load", String (head args)]))) >>= hPutStrLn stderr
+--  runIOThrows $ evalContT (show <$> eval env (List [Atom "load", String (head args)])) >>= hPutStrLn stderr
 
 runRepl :: IO ()
 runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "Lisp>>> ") . evalAndPrint
