@@ -37,8 +37,20 @@ evalString :: Env -> String -> IO String
 evalString env expr = runIOThrows $ show <$> runEval (stringToAction env expr)  -- (liftThrows (readExpr expr) >>= eval env) -- evalContT (liftThrows (readExpr expr) >>= eval env)
 --evalString env expr = return $ extractValue $ trapError (fmap show $ readExpr expr >>= eval env)
 
-evalAndPrint :: Env -> String -> IO ()
-evalAndPrint env expr = evalString env expr >>= putStrLn
+loopRead :: String -> IO LispVal
+loopRead pfx = do
+  rest <- readPrompt ". "
+  parseLine $ pfx ++ rest
+
+parseLine :: String -> IO LispVal
+-- parseLine str = return $ either (\s -> String "error") id $ readExpr str
+parseLine str = either (\_ -> loopRead str) return $ readExpr str
+
+evalExpr :: Env -> LispVal -> IO String
+evalExpr env expr = runIOThrows $ show <$> runEval (eval env expr)
+
+evalAndPrint :: Env -> LispVal -> IO ()
+evalAndPrint env expr = evalExpr env expr >>= putStrLn
 
 until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
 until_ pred prompt action = do
@@ -54,8 +66,11 @@ runOne args = do --primitiveBindings >>= flip evalAndPrint expr
   runIOThrows (show <$> runEval (eval env (List [Atom "load", String (head args)]))) >>= hPutStrLn stderr
 --  runIOThrows $ evalContT (show <$> eval env (List [Atom "load", String (head args)])) >>= hPutStrLn stderr
 
+isQuit (Atom "quit") = True
+isQuit _ = False
+
 runRepl :: IO ()
-runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "Lisp>>> ") . evalAndPrint
+runRepl = primitiveBindings >>= until_ isQuit (readPrompt "Lisp>>> " >>= parseLine) . evalAndPrint
 
 main :: IO ()
 main = do
