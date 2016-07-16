@@ -71,6 +71,7 @@ showVal (Bool True) = "#t"
 showVal (Bool False) = "#f"
 showVal (List contents) = "(" ++ unwordsList contents ++ ")"
 showVal (DottedList head tail) = "(" ++ unwordsList head ++ " . " ++ showVal tail ++ ")"
+showVal (SpecialForm _) = "<special form>"
 showVal (PrimitiveFunc _) = "<primitive>"
 showVal (Continuation _) = "<continuation>"
 showVal Func {params = args, vararg = varargs, body = body, closure = env} =
