@@ -27,29 +27,6 @@ primitiveBindings = nullEnv >>= flip bindVars (map (makeFunc PrimitiveFunc) prim
                                              )
   where makeFunc constructor (var, func) = (var, constructor func)
 
-
-flushStr :: String -> IO ()
-flushStr str = putStr str >> hFlush stdout
-
-readPrompt :: String -> IO String
-readPrompt prompt = flushStr prompt >> getLine
-
-stringToAction :: Env -> String -> LispEval
-stringToAction env expr = lift (liftThrows (readExpr expr)) >>= eval env
-
-evalString :: Env -> String -> IO String
-evalString env expr = runIOThrows $ show <$> runEval (stringToAction env expr)  -- (liftThrows (readExpr expr) >>= eval env) -- evalContT (liftThrows (readExpr expr) >>= eval env)
---evalString env expr = return $ extractValue $ trapError (fmap show $ readExpr expr >>= eval env)
-
-loopRead :: String -> IO LispVal
-loopRead pfx = do
-  rest <- readPrompt ". "
-  parseLine $ pfx ++ rest
-
-parseLine :: String -> IO LispVal
--- parseLine str = return $ either (\s -> String "error") id $ readExpr str
-parseLine str = either (\_ -> loopRead str) return $ readExpr str
-
 evalExpr :: Env -> LispVal -> IO String
 evalExpr env expr = runIOThrows $ show <$> runEval (eval env expr)
 
