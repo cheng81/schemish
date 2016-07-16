@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Main where
 
 import           Control.Applicative        ((<$>))
@@ -5,9 +6,8 @@ import           Control.Monad              (liftM, unless)
 import           Control.Monad.IO.Class     (liftIO)
 import           Control.Monad.State.Strict (StateT, evalStateT, get, put)
 import           Control.Monad.Trans        (lift)
-
---import           Control.Monad.Trans.Cont (evalContT)
 import           Data.Char                  (isSpace)
+import           Data.IORef                 (readIORef)
 import           Env                        (bindVars, nullEnv)
 import           Eval
 import           IOFunc                     (ioPrimitives)
@@ -56,50 +56,54 @@ evalExpr env expr = runIOThrows $ show <$> runEval (eval env expr)
 evalAndPrint :: Env -> LispVal -> IO ()
 evalAndPrint env expr = evalExpr env expr >>= putStrLn
 
-evalStringAndPrint :: Env -> String -> IO ()
-evalStringAndPrint env expr = evalString env expr >>= putStrLn
-
-until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
-until_ pred prompt action = do
-  result <- prompt
-  unless (pred result) $ action result >> until_ pred prompt action
-  -- if pred result
-  --   then return ()
-  --   else action result >> until_ pred prompt action
-
 runOne :: [String] -> IO ()
 runOne args = do --primitiveBindings >>= flip evalAndPrint expr
   env <- primitiveBindings >>= flip bindVars [("args", List $ map String $ drop 1 args)]
   runIOThrows (show <$> runEval (eval env (List [Atom "load", String (head args)]))) >>= hPutStrLn stderr
---  runIOThrows $ evalContT (show <$> eval env (List [Atom "load", String (head args)])) >>= hPutStrLn stderr
 
-isQuit (Atom "quit") = True
-isQuit _ = False
+runReplLoop :: IO ()
+runReplLoop = primitiveBindings >>= \env -> evalStateT (runInputT defaultSettings $ withInterrupt (replLoop promptStd)) (env, "")
 
-runRepl :: IO ()
-runRepl = primitiveBindings >>= until_ isQuit (readPrompt "Lisp>>> " >>= parseLine) . evalAndPrint
+promptStd = "schish$ "
 
--- liftEnv :: IO Env -> InputT IO Env
--- liftEnv env = liftM env
---
--- runReplLoop = runInputT defaultSettings $ liftEnv primitiveBindings >>= replLoop
-runReplLoop = primitiveBindings >>= evalStateT (runInputT defaultSettings replLoop)
+dumpEnv :: Env -> IO ()
+dumpEnv envRef = do
+  env <- readIORef envRef
+  putStrLn "# Bindings:"
+  dump_ env
+  putStrLn "#"
+  return ()
+  where
+    dump_ [] = return ()
+    dump_ ((k, vRef):rest) = do
+      v <- readIORef vRef
+      putStrLn (k ++ ": " ++ show v)
+      dump_ rest
 
-replLoop :: InputT (StateT Env IO) ()
-replLoop = do
-  maybeLine <- getInputLine "schish>>> "
+
+replLoop :: String -> InputT (StateT (Env, String) IO) ()
+replLoop prompt = do
+  maybeLine <- getInputLine prompt
   case maybeLine of
     Nothing -> return ()
-    Just line -> do
-      let trimmedLine = dropWhile isSpace line
-      if not $ null trimmedLine
-        then case trimmedLine of
-          "quit" -> return ()
-          _ -> lift get >>= \e -> liftIO (evalStringAndPrint e trimmedLine) >> replLoop
-          -- _ -> do
-          --       _ <- lift $ evalStringAndPrint env trimmedLine
-          --       replLoop env
-        else replLoop
+    Just line ->
+      if not $ null line
+        then case line of
+          ":quit" -> return ()
+          ":env" -> do
+            (e, _) <- lift get
+            liftIO (dumpEnv e)
+            replLoop promptStd
+          _ -> do
+            (e, pfx) <- lift get
+            let eitherExpr = readExpr (pfx ++ line)
+            case eitherExpr of
+              Left err -> (lift . put) (e, pfx ++ line) >> handleInterrupt ((lift . put) (e, "") >> replLoop promptStd) (replLoop "... ")
+              Right expr -> do
+                liftIO (evalAndPrint e expr)
+                (lift . put) (e, "")
+                handleInterrupt (return ()) (replLoop promptStd)
+        else replLoop prompt
 
 main :: IO ()
 main = do
