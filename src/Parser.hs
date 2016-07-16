@@ -71,7 +71,7 @@ parseFloat = do
   return $ (Float . fst . head . readFloat) (real ++ "." ++ frac)
 
 parseList :: Parser LispVal
-parseList = List <$> sepBy parseExpr spaces
+parseList = List <$> sepEndBy parseExpr spaces
 
 parseDottedList :: Parser LispVal
 parseDottedList = do
