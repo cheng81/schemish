@@ -1,21 +1,24 @@
 {-# LANGUAGE FlexibleContexts #-}
 module Main where
 
-import           Control.Applicative        ((<$>))
-import           Control.Monad              (liftM, unless)
-import           Control.Monad.IO.Class     (liftIO)
-import           Control.Monad.State.Strict (StateT, evalStateT, get, put)
-import           Control.Monad.Trans        (lift)
-import           Data.Char                  (isSpace)
-import           Data.IORef                 (readIORef)
-import           Env                        (bindVars, nullEnv)
+import           Control.Applicative                 ((<$>))
+import           Control.Monad                       (liftM, unless)
+import           Control.Monad.IO.Class              (liftIO)
+import           Control.Monad.State.Strict          (StateT, evalStateT, get,
+                                                      put)
+import           Control.Monad.Trans                 (lift)
+import           Data.Char                           (isSpace)
+import           Data.IORef                          (readIORef)
+import           Data.List                           (isPrefixOf)
+import           Env                                 (bindVars, nullEnv)
 import           Eval
-import           IOFunc                     (ioPrimitives)
+import           IOFunc                              (ioPrimitives)
 import           Lib
 import           Parser
-import           PrimitiveFunc              (primitives)
-import           SpecialForm                (specialForms)
+import           PrimitiveFunc                       (primitives)
+import           SpecialForm                         (specialForms)
 import           System.Console.Haskeline
+import           System.Console.Haskeline.Completion
 import           System.Environment
 import           System.IO
 import           Types
@@ -39,7 +42,22 @@ runOne args = do --primitiveBindings >>= flip evalAndPrint expr
   runIOThrows (show <$> runEval (eval env (List [Atom "load", String (head args)]))) >>= hPutStrLn stderr
 
 runReplLoop :: IO ()
-runReplLoop = primitiveBindings >>= \env -> evalStateT (runInputT defaultSettings $ withInterrupt (replLoop promptStd)) (env, "")
+runReplLoop = primitiveBindings >>= \env -> evalStateT (runInputT (setComplete replComplete defaultSettings) $ withInterrupt (replLoop promptStd)) (env, "")
+
+replComplete :: CompletionFunc (StateT (Env, String) IO)
+replComplete = completeQuotedWord Nothing "\"\'" (const $ return []) symbolComplete
+
+symbolComplete :: CompletionFunc (StateT (Env, String) IO)
+symbolComplete = completeWord Nothing "() \t" completeEnv
+
+completeEnv :: String -> (StateT (Env, String) IO) [Completion]
+completeEnv s = do
+    (envRef, _) <- get
+    env <- liftIO $ readIORef envRef
+    let keys = keys_ env
+    return $ map simpleCompletion $ filter (isPrefixOf s) keys
+    where keys_ [] = []
+          keys_ ((k, _):rest) = k : keys_ rest
 
 promptStd = "schish$ "
 
