@@ -20,6 +20,21 @@
     (call-with-current-continuation control-state))
   generator)
 
+(define (stream:cycle lst)
+  (define (control-state return)
+    (define (_loop _lst)
+      (set! return (call-with-current-continuation
+                    (lambda (resume-here)
+                      (set! control-state resume-here)
+                      (return (car _lst)))))
+      (if (null? (cdr _lst))
+        (_loop lst)
+        (_loop (cdr _lst))))
+    (_loop lst))
+  (define (generator)
+    (call-with-current-continuation control-state))
+  generator)
+
 (define (stream:int)
   (define (control-state return)
     (define (_loop cur)

@@ -1,20 +1,27 @@
+{-# LANGUAGE FlexibleContexts #-}
 module Main where
 
-import           Control.Applicative ((<$>))
-import           Control.Monad       (unless)
-import           Control.Monad.Trans (lift)
---import           Control.Monad.Trans.Cont (evalContT)
-import           Env                 (bindVars, nullEnv)
+import           Control.Applicative                 ((<$>))
+import           Control.Monad                       (liftM, unless)
+import           Control.Monad.IO.Class              (liftIO)
+import           Control.Monad.State.Strict          (StateT, evalStateT, get,
+                                                      put)
+import           Control.Monad.Trans                 (lift)
+import           Data.Char                           (isSpace)
+import           Data.IORef                          (readIORef)
+import           Data.List                           (isPrefixOf)
+import           Env                                 (bindVars, nullEnv)
 import           Eval
-import           IOFunc              (ioPrimitives)
+import           IOFunc                              (ioPrimitives)
 import           Lib
 import           Parser
-import           PrimitiveFunc       (primitives)
-import           SpecialForm         (specialForms)
+import           PrimitiveFunc                       (primitives)
+import           SpecialForm                         (specialForms)
+import           System.Console.Haskeline
+import           System.Console.Haskeline.Completion
 import           System.Environment
 import           System.IO
 import           Types
-
 
 primitiveBindings :: IO Env
 primitiveBindings = nullEnv >>= flip bindVars (map (makeFunc PrimitiveFunc) primitives
@@ -23,44 +30,80 @@ primitiveBindings = nullEnv >>= flip bindVars (map (makeFunc PrimitiveFunc) prim
                                              )
   where makeFunc constructor (var, func) = (var, constructor func)
 
+evalExpr :: Env -> LispVal -> IO String
+evalExpr env expr = runIOThrows $ show <$> runEval (eval env expr)
 
-flushStr :: String -> IO ()
-flushStr str = putStr str >> hFlush stdout
-
-readPrompt :: String -> IO String
-readPrompt prompt = flushStr prompt >> getLine
-
-stringToAction :: Env -> String -> LispEval
-stringToAction env expr = lift (liftThrows (readExpr expr)) >>= eval env
-
-evalString :: Env -> String -> IO String
-evalString env expr = runIOThrows $ show <$> runEval (stringToAction env expr)  -- (liftThrows (readExpr expr) >>= eval env) -- evalContT (liftThrows (readExpr expr) >>= eval env)
---evalString env expr = return $ extractValue $ trapError (fmap show $ readExpr expr >>= eval env)
-
-evalAndPrint :: Env -> String -> IO ()
-evalAndPrint env expr = evalString env expr >>= putStrLn
-
-until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
-until_ pred prompt action = do
-  result <- prompt
-  unless (pred result) $ action result >> until_ pred prompt action
-  -- if pred result
-  --   then return ()
-  --   else action result >> until_ pred prompt action
+evalAndPrint :: Env -> LispVal -> IO ()
+evalAndPrint env expr = evalExpr env expr >>= putStrLn
 
 runOne :: [String] -> IO ()
 runOne args = do --primitiveBindings >>= flip evalAndPrint expr
   env <- primitiveBindings >>= flip bindVars [("args", List $ map String $ drop 1 args)]
   runIOThrows (show <$> runEval (eval env (List [Atom "load", String (head args)]))) >>= hPutStrLn stderr
---  runIOThrows $ evalContT (show <$> eval env (List [Atom "load", String (head args)])) >>= hPutStrLn stderr
 
-runRepl :: IO ()
-runRepl = primitiveBindings >>= until_ (== "quit") (readPrompt "Lisp>>> ") . evalAndPrint
+runReplLoop :: IO ()
+runReplLoop = primitiveBindings >>= \env -> evalStateT (runInputT (setComplete replComplete defaultSettings) $ withInterrupt (replLoop promptStd)) (env, "")
+
+replComplete :: CompletionFunc (StateT (Env, String) IO)
+replComplete = completeQuotedWord Nothing "\"\'" (const $ return []) symbolComplete
+
+symbolComplete :: CompletionFunc (StateT (Env, String) IO)
+symbolComplete = completeWord Nothing "() \t" completeEnv
+
+completeEnv :: String -> (StateT (Env, String) IO) [Completion]
+completeEnv s = do
+    (envRef, _) <- get
+    env <- liftIO $ readIORef envRef
+    let keys = keys_ env
+    return $ map simpleCompletion $ filter (isPrefixOf s) keys
+    where keys_ [] = []
+          keys_ ((k, _):rest) = k : keys_ rest
+
+promptStd = "schish$ "
+
+dumpEnv :: Env -> IO ()
+dumpEnv envRef = do
+  env <- readIORef envRef
+  putStrLn "# Bindings:"
+  dump_ env
+  putStrLn "#"
+  return ()
+  where
+    dump_ [] = return ()
+    dump_ ((k, vRef):rest) = do
+      v <- readIORef vRef
+      putStrLn (k ++ ": " ++ show v)
+      dump_ rest
+
+
+replLoop :: String -> InputT (StateT (Env, String) IO) ()
+replLoop prompt = do
+  maybeLine <- getInputLine prompt
+  case maybeLine of
+    Nothing -> return ()
+    Just line ->
+      if not $ null line
+        then case line of
+          ":quit" -> return ()
+          ":env" -> do
+            (e, _) <- lift get
+            liftIO (dumpEnv e)
+            replLoop promptStd
+          _ -> do
+            (e, pfx) <- lift get
+            let eitherExpr = readExpr (pfx ++ line)
+            case eitherExpr of
+              Left err -> (lift . put) (e, pfx ++ line) >> handleInterrupt ((lift . put) (e, "") >> replLoop promptStd) (replLoop "... ")
+              Right expr -> do
+                liftIO (evalAndPrint e expr)
+                (lift . put) (e, "")
+                handleInterrupt (return ()) (replLoop promptStd)
+        else replLoop prompt
 
 main :: IO ()
 main = do
   args <- getArgs
-  if null args then runRepl else runOne args
+  if null args then runReplLoop else runOne args
   -- case length args of
   --   0 -> runRepl
   --   1 -> runOne $ head args -- evalAndPrint $ head args
