@@ -114,7 +114,7 @@ parseExpr =  parseAtom
          <|> parseUnquoted
          <|> do char '('
                 spacesM
-                x <- try parseList <|> parseDottedList
+                x <- try parseDottedList <|> parseList
                 spacesM
                 char ')'
                 return x
