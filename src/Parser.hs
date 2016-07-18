@@ -13,10 +13,16 @@ symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 spaces :: Parser ()
-spaces = skipMany1 space
+spaces = skipMany1 (space <|> comment)
 
 spacesM :: Parser ()
-spacesM = skipMany space
+spacesM = skipMany (space <|> comment)
+
+comment :: Parser Char
+comment = do
+  string ";;"
+  many $ noneOf "\n"
+  return 'x'
 
 escapedChar = do
   char '\\'
@@ -120,9 +126,9 @@ parseExpr =  parseAtom
                 return x
 
 readExpr :: String -> ThrowsError LispVal
-readExpr = readOrThrow parseExpr
+readExpr = readOrThrow (spacesM >> parseExpr)
 
-readExprList = readOrThrow (endBy parseExpr spaces)
+readExprList = readOrThrow (spacesM >> endBy parseExpr spaces)
 -- readExpr input = case parse parseExpr "lisp" input of
 --   Left err -> throwError $ Parser err
 --   Right val -> return val
