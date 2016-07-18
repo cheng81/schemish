@@ -84,6 +84,7 @@ replLoop prompt = do
     Just line ->
       if not $ null line
         then case line of
+          (';' : ';' : _) -> replLoop prompt
           ":quit" -> return ()
           ":env" -> do
             (e, _) <- lift get
