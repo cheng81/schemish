@@ -55,8 +55,10 @@
 (define (map func lst) (foldr (lambda (x y) (cons (func x) y)) '() lst))
 (define (filter pred lst) (foldr (lambda (x y) (if (pred x) (cons x y) y)) '() lst))
 
+;; short form for call-with-current-continuation
 (define callCC call-with-current-continuation)
 
+;; call the given function on all items in the list
 (define (for-each fn lst)
   (if (null? lst)
     '()
