@@ -10,7 +10,8 @@ import           Control.Monad.Trans                 (lift)
 import           Data.Char                           (isSpace)
 import           Data.IORef                          (readIORef)
 import           Data.List                           (isPrefixOf)
-import           Env                                 (bindVars, nullEnv)
+import           Env                                 (bindVars, dump, keys,
+                                                      nullEnv)
 import           Eval
 import           IOFunc                              (ioPrimitives)
 import           Lib
@@ -53,28 +54,10 @@ symbolComplete = completeWord Nothing "() \t" completeEnv
 completeEnv :: String -> (StateT (Env, String) IO) [Completion]
 completeEnv s = do
     (envRef, _) <- get
-    env <- liftIO $ readIORef envRef
-    let keys = keys_ env
+    keys <- liftIO $ keys envRef
     return $ map simpleCompletion $ filter (isPrefixOf s) keys
-    where keys_ [] = []
-          keys_ ((k, _):rest) = k : keys_ rest
 
 promptStd = "schish$ "
-
-dumpEnv :: Env -> IO ()
-dumpEnv envRef = do
-  env <- readIORef envRef
-  putStrLn "# Bindings:"
-  dump_ env
-  putStrLn "#"
-  return ()
-  where
-    dump_ [] = return ()
-    dump_ ((k, vRef):rest) = do
-      v <- readIORef vRef
-      putStrLn (k ++ ": " ++ show v)
-      dump_ rest
-
 
 replLoop :: String -> InputT (StateT (Env, String) IO) ()
 replLoop prompt = do
@@ -88,7 +71,7 @@ replLoop prompt = do
           ":quit" -> return ()
           ":env" -> do
             (e, _) <- lift get
-            liftIO (dumpEnv e)
+            liftIO (dump e)
             replLoop promptStd
           _ -> do
             (e, pfx) <- lift get
