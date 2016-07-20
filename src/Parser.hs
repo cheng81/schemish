@@ -4,6 +4,7 @@ module Parser
     ,readExprList
     ) where
 
+import           Control.Monad                 (void)
 import           Control.Monad.Except
 import           Numeric                       (readFloat)
 import           Text.ParserCombinators.Parsec hiding (spaces)
@@ -13,16 +14,15 @@ symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"
 
 spaces :: Parser ()
-spaces = skipMany1 (space <|> comment)
+spaces = skipMany1 (void space <|> comment)
 
 spacesM :: Parser ()
-spacesM = skipMany (space <|> comment)
+spacesM = skipMany (void space <|> comment)
 
-comment :: Parser Char
-comment = do
-  string ";;"
+comment :: Parser ()
+comment = void $ do
+  string ";"
   many $ noneOf "\n"
-  return 'x'
 
 escapedChar = do
   char '\\'
@@ -63,6 +63,7 @@ parseAtom = do
   return $ case atom of
     "#t" -> Bool True
     "#f" -> Bool False
+    "#u" -> Unit
     _    -> Atom atom
 
 parseNumber :: Parser LispVal
